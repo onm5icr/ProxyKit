@@ -2,7 +2,7 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Reflection.Metadata.Ecma335;
+using System.Net.WebSockets;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,8 +20,6 @@ namespace ProxyKit
 {
     public class EndToEndTests
     {
-        public EndToEndTests() { }
-
         [Fact]
         public async Task Can_get_proxied_route()
         {
@@ -130,6 +128,26 @@ namespace ProxyKit
             }
         }
 
+        [Fact]
+        public async Task Can_proxy_websockets()
+        {
+            using (var server = BuildKestrelBasedServerOnRandomPort())
+            {
+                await server.StartAsync();
+                var port = GetServerPort(server);
+
+                using (var testServer = new TestServer(new WebHostBuilder()
+                    .UseSetting("port", port.ToString())
+                    .UseSetting("timeout", "1")
+                    .UseStartup<TestStartup>()))
+                {
+                    var client = testServer.CreateWebSocketClient();
+                    var webSocket = await client.ConnectAsync(new Uri("http://localhost/ws"), CancellationToken.None);
+                    await webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Close", CancellationToken.None);
+                }
+            }
+        }
+
         private static IWebHost BuildKestrelBasedServerOnRandomPort()
         {
             return new WebHostBuilder()
@@ -152,74 +170,113 @@ namespace ProxyKit
 
             return port;
         }
-    }
 
-    public class RealStartup
-    {
-        public void ConfigureServices(IServiceCollection services) { }
-
-        public void Configure(IApplicationBuilder app)
+        public class RealStartup
         {
-            app.Map("/normal", a => a.Run(async ctx =>
+            public void ConfigureServices(IServiceCollection services)
             {
-                ctx.Response.StatusCode = 200;
-                await ctx.Response.WriteAsync("Ok");
-            }));
+            }
 
-            app.Map("/badrequest", a => a.Run(async ctx =>
+            public void Configure(IApplicationBuilder app)
             {
-                ctx.Response.StatusCode = 400;
-                await ctx.Response.WriteAsync("Nah..");
-            }));
+                app.Map("/normal", a => a.Run(async ctx =>
+                {
+                    ctx.Response.StatusCode = 200;
+                    await ctx.Response.WriteAsync("Ok");
+                }));
 
-            app.Map("/slow", a => a.Run(async ctx =>
-            {
-                await Task.Delay(5000);
-                ctx.Response.StatusCode = 200;
-                await ctx.Response.WriteAsync("Ok... i guess");
-            }));
+                app.Map("/badrequest", a => a.Run(async ctx =>
+                {
+                    ctx.Response.StatusCode = 400;
+                    await ctx.Response.WriteAsync("Nah..");
+                }));
 
-            app.Map("/error", a => a.Run(async ctx =>
+                app.Map("/slow", a => a.Run(async ctx =>
+                {
+                    await Task.Delay(5000);
+                    ctx.Response.StatusCode = 200;
+                    await ctx.Response.WriteAsync("Ok... i guess");
+                }));
+
+                app.Map("/error", a => a.Run(async ctx =>
+                {
+                    ctx.Response.StatusCode = 500;
+                    await ctx.Response.WriteAsync("cute..... BUT IT'S WRONG!");
+                }));
+
+                app.Map("/ws", a =>
+                {
+                    app.UseWebSockets();
+                    app.Use(async (context, next) =>
+                    {
+                        if (context.WebSockets.IsWebSocketRequest)
+                        {
+                            WebSocket webSocket = await context.WebSockets.AcceptWebSocketAsync();
+                            await Echo(context, webSocket);
+                        }
+                        else
+                        {
+                            context.Response.StatusCode = 400;
+                        }
+                    });
+                });
+            }
+
+            private async Task Echo(HttpContext context, WebSocket webSocket)
             {
-                ctx.Response.StatusCode = 500;
-                await ctx.Response.WriteAsync("cute..... BUT IT'S WRONG!");
-            }));
+                var buffer = new byte[1024 * 4];
+                var result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                while (!result.CloseStatus.HasValue)
+                {
+                    await webSocket.SendAsync(new ArraySegment<byte>(buffer, 0, result.Count), result.MessageType, result.EndOfMessage, CancellationToken.None);
+
+                    result = await webSocket.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+                }
+                await webSocket.CloseAsync(result.CloseStatus.Value, result.CloseStatusDescription, CancellationToken.None);
+            }
         }
-    }
 
-    public class TestStartup
-    {
-        private readonly IConfiguration _config;
-
-        public TestStartup(IConfiguration config) { _config = config; }
-
-        public void ConfigureServices(IServiceCollection services)
+        public class TestStartup
         {
-            var timeout = _config.GetValue("timeout", 60);
-            services.AddProxy(options =>
-                options.ConfigureHttpClient = 
-                    (serviceProvider, client) => client.Timeout = TimeSpan.FromSeconds(timeout));
-        }
+            private readonly IConfiguration _config;
 
-        public void Configure(IApplicationBuilder app, IServiceProvider sp)
-        {
-            app.UseXForwardedHeaders();
+            public TestStartup(IConfiguration config) => _config = config;
 
-            app.Map("/accepted", appInner => 
-                appInner.RunProxy(async context 
-                    => new HttpResponseMessage(HttpStatusCode.Accepted)));
-
-            app.Map("/forbidden", appInner => 
-                appInner.RunProxy(async context 
-                    => new HttpResponseMessage(HttpStatusCode.Forbidden)));
-
-            var port = _config.GetValue("Port", 0);
-            if (port != 0)
+            public void ConfigureServices(IServiceCollection services)
             {
-                app.Map("/realServer", appInner =>
-                    appInner.RunProxy(context => context
-                        .ForwardTo("http://localhost:" + port + "/")
-                        .Execute()));
+                var timeout = _config.GetValue("timeout", 60);
+                services.AddProxy(options =>
+                    options.ConfigureHttpClient =
+                        (serviceProvider, client) => client.Timeout = TimeSpan.FromSeconds(timeout));
+            }
+
+            public void Configure(IApplicationBuilder app, IServiceProvider sp)
+            {
+                app.UseXForwardedHeaders();
+
+                app.Map("/accepted", appInner =>
+                    appInner.RunProxy(async context
+                        => new HttpResponseMessage(HttpStatusCode.Accepted)));
+
+                app.Map("/forbidden", appInner =>
+                    appInner.RunProxy(async context
+                        => new HttpResponseMessage(HttpStatusCode.Forbidden)));
+
+                var port = _config.GetValue("Port", 0);
+                if (port != 0)
+                {
+                    app.Map("/realServer", appInner =>
+                        appInner.RunProxy(context => context
+                            .ForwardTo("http://localhost:" + port + "/")
+                            .Execute()));
+
+                    app.UseWebSockets();
+
+                    app.Map("/ws", appInner =>
+                        appInner.RunProxy(context => context
+                            .ForwardTo("http://localhost:" + port + "/ws")
+                            .Execute()));
+                }
             }
         }
     }
