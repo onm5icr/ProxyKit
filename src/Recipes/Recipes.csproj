@@ -16,6 +16,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\ProxyKit.Testing\ProxyKit.Testing.csproj" />
     <ProjectReference Include="..\ProxyKit\ProxyKit.csproj" />
   </ItemGroup>
 

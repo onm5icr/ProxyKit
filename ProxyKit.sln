@@ -9,6 +9,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "ProxyKit.Tests", "src\Proxy
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Recipes", "src\Recipes\Recipes.csproj", "{B2DE9AD5-0E1C-4774-A4EB-B7A18D12529B}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ProxyKit.Testing", "ProxyKit.Testing\ProxyKit.Testing.csproj", "{965EA225-C29B-462C-8B70-FB3EA1B6F94E}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -27,6 +29,10 @@ Global
 		{B2DE9AD5-0E1C-4774-A4EB-B7A18D12529B}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{B2DE9AD5-0E1C-4774-A4EB-B7A18D12529B}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{B2DE9AD5-0E1C-4774-A4EB-B7A18D12529B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{965EA225-C29B-462C-8B70-FB3EA1B6F94E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{965EA225-C29B-462C-8B70-FB3EA1B6F94E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{965EA225-C29B-462C-8B70-FB3EA1B6F94E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{965EA225-C29B-462C-8B70-FB3EA1B6F94E}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
