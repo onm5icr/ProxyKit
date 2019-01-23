@@ -2,7 +2,6 @@
 using System.Linq;
 using System.Net;
 using System.Net.Http;
-using System.Reflection.Metadata.Ecma335;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -20,8 +19,6 @@ namespace ProxyKit
 {
     public class EndToEndTests
     {
-        public EndToEndTests() { }
-
         [Fact]
         public async Task Can_get_proxied_route()
         {
@@ -130,6 +127,21 @@ namespace ProxyKit
             }
         }
 
+        [Fact]
+        public async Task Hsts_Header_should_be_preserved()
+        {
+            var webHostBuilder = new WebHostBuilder()
+                .UseStartup<TestStartup>();
+
+            using (var testServer = new TestServer(webHostBuilder))
+            {
+                var client = testServer.CreateClient();
+                var result = await client.GetAsync("https://example.com/accepted");
+                result.Headers.TryGetValues("Strict-Transport-Security", out var values);
+                values.SingleOrDefault().ShouldStartWith("max-age=");
+            }
+        }
+
         private static IWebHost BuildKestrelBasedServerOnRandomPort()
         {
             return new WebHostBuilder()
@@ -204,6 +216,13 @@ namespace ProxyKit
         public void Configure(IApplicationBuilder app, IServiceProvider sp)
         {
             app.UseXForwardedHeaders();
+            app.UseHsts();
+            
+            app.Map("/normal", appInner => appInner.Run(async ctx =>
+            {
+                ctx.Response.StatusCode = 200;
+                await ctx.Response.WriteAsync("Ok");
+            }));
 
             app.Map("/accepted", appInner => 
                 appInner.RunProxy(async context 
